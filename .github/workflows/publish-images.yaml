@@ -4,73 +4,39 @@ on:
   push:
     branches:
       - main
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  export-registry:
-    runs-on: ubuntu-20.04
-    outputs:
-      registry: ${{ steps.export.outputs.registry }}
+  build-and-push-image:
+    runs-on: ubuntu-latest
     steps:
-      - id: export
-        run: |
-          # registry must be in lowercase
-          echo "::set-output name=registry::$(echo "ghcr.io/${{ github.repository }}" | tr [:upper:] [:lower:])"
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  publish-images:
-    needs: export-registry
-    env:
-      REGISTRY: ${{ needs.export-registry.outputs.registry }}
-    strategy:
-      fail-fast: false
-      matrix:
-        image: [webhook, proxy, proxy-init]
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2.0.0
         with:
-          submodules: true
-          fetch-depth: 0
-      - name: Login to ghcr.io
-        uses: docker/login-action@49ed152c8eca782a232dede0303416e8f356c37b
-        with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build ${{ matrix.image }}
-        run: |
-          make docker-build docker-push-manifest
-        env:
-          ALL_IMAGES: ${{ matrix.image }}
-          IMAGE_VERSION: latest
 
-  publish-example-images:
-    needs: export-registry
-    env:
-      REGISTRY: ${{ needs.export-registry.outputs.registry }}
-    strategy:
-      fail-fast: false
-      matrix:
-        dir: [examples/msal-go, examples/msal-net/akvdotnet, examples/msal-node, examples/msal-python, examples/msal-java]
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4.0.1
         with:
-          submodules: true
-          fetch-depth: 0
-      - name: Login to ghcr.io
-        uses: docker/login-action@49ed152c8eca782a232dede0303416e8f356c37b
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3.0.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: nick-invision/retry@v2
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: |
-            make docker-buildx-builder
-            make -C ${{ matrix.dir }} container-all push-manifest
+          context: .
+          file: docker/proxy.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

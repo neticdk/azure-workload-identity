@@ -105,8 +105,11 @@ func (p *proxy) msiHandler(w http.ResponseWriter, r *http.Request) {
 	// if clientID not found in request? This is to keep consistent with the current behavior
 	// in pod identity v1 where we default the client id to the one in AzureIdentity.
 	if clientID == "" {
-		http.Error(w, "The client_id parameter is required.", http.StatusBadRequest)
-		return
+		clientID = os.Getenv("AZURE_CLIENT_ID")
+		if clientID == "" {
+			http.Error(w, "The client_id parameter is required.", http.StatusBadRequest)
+			return
+		}
 	}
 	if resource == "" {
 		http.Error(w, "The resource parameter is required.", http.StatusBadRequest)
